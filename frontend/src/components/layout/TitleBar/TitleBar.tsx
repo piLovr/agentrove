@@ -12,6 +12,7 @@ import { ChannelHeader } from '@/components/channels/ChannelHeader';
 import clsx from 'clsx';
 import { IS_MAC_PLATFORM, isDesktopApp } from '@/utils/platform';
 import styles from './TitleBar.module.scss';
+import { HubBadge } from '@/hub/HubBadge';
 
 async function getTauriWindow() {
   const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -207,6 +208,7 @@ export function TitleBar() {
           {isAuthenticated && isChannelPage && <ChannelHeader />}
         </div>
         {/* No per-view tabs — switcher opens/closes views (landing needs it too). */}
+        {isAuthenticated && <HubBadge />}
         {hasWorkspaceViews && <ViewSwitcher />}
       </div>
     </div>

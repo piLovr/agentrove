@@ -14,6 +14,7 @@ import { InputProvider } from './InputProvider';
 import { useInputContext } from '@/hooks/useInputContext';
 import type { ContextUsageInfo } from '@/utils/contextUsage';
 import styles from './Input.module.scss';
+import { HubMicButton } from '@/hub/HubMicButton';
 
 export interface InputProps {
   message: string;
@@ -120,6 +121,11 @@ function InputLayout() {
               actions.resetDragState();
               actions.setShowFileUpload(true);
             }}
+          />
+          <HubMicButton
+            message={state.message}
+            setMessage={actions.setMessage}
+            disabled={state.isDisabled}
           />
           <SendButton
             status={sendStatus}

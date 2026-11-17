@@ -16,6 +16,8 @@ FROM nginx:1.27-alpine
 
 # Official nginx image runs envsubst on templates/*.template at start.
 ENV API_HOST=api
+# Agent Hub service name (fork)
+ENV HUB_HOST=hub
 COPY nginx-production.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 

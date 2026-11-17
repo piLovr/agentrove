@@ -1,0 +1,146 @@
+// Styles for the Agent Hub integration. Uses Agentrove's theme variables only.
+.ok {
+  color: var(--theme-text-secondary);
+}
+.warn {
+  color: #d39b2a;
+}
+.bad {
+  color: #e0605a;
+}
+.muted {
+  color: var(--theme-text-tertiary);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  margin: 0 8px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--theme-border-primary, rgba(127, 127, 127, 0.25));
+  background: transparent;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--theme-text-secondary);
+  &:hover {
+    background: var(--theme-surface-hover);
+  }
+}
+.badge-icon {
+  width: 14px;
+  height: 14px;
+}
+.badge-provider {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.mic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--theme-text-tertiary);
+  cursor: pointer;
+  &:hover:not(:disabled) {
+    background: var(--theme-surface-hover);
+    color: var(--theme-text-primary);
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+.mic-rec {
+  background: #e0605a;
+  color: #fff;
+  &:hover:not(:disabled) {
+    background: #c94c46;
+    color: #fff;
+  }
+}
+.mic-icon {
+  width: 16px;
+  height: 16px;
+}
+.spin {
+  animation: hub-spin 1s linear infinite;
+}
+@keyframes hub-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.job-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: var(--theme-surface-hover);
+  button {
+    border: 0;
+    border-radius: 6px;
+    padding: 2px 8px;
+    background: var(--theme-surface-tertiary, rgba(127, 127, 127, 0.15));
+    color: var(--theme-text-primary);
+    cursor: pointer;
+  }
+}
+.job-link {
+  font-weight: 600;
+  color: var(--theme-text-primary);
+}
+.job-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.chip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--theme-surface-tertiary, rgba(127, 127, 127, 0.15));
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--theme-surface-primary, #111);
+}
+.page-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  padding: 0 12px;
+  padding-top: env(safe-area-inset-top);
+  font-size: 13px;
+  border-bottom: 1px solid var(--theme-border-primary, rgba(127, 127, 127, 0.25));
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--theme-text-primary);
+  cursor: pointer;
+}
+.frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+}

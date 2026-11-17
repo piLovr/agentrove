@@ -19,10 +19,14 @@ import { useCheckpointRestore } from '@/hooks/useCheckpointRestore';
 import { useChatMachineId } from '@/store/machineOrigin';
 import styles from './Message.module.scss';
 
-export function MessageRow({ children }: { children: ReactNode }) {
+export function MessageRow({ children, own = false }: { children: ReactNode; own?: boolean }) {
   return (
     <div className={styles.message}>
-      <div className={styles['message-row']}>
+      <div
+        className={
+          own ? `${styles['message-row']} ${styles['message-row--own']}` : styles['message-row']
+        }
+      >
         <div className={styles['message-body']}>{children}</div>
       </div>
     </div>
@@ -78,7 +82,7 @@ export const UserMessage = memo(function UserMessage({
   }
 
   return (
-    <MessageRow>
+    <MessageRow own>
       <UserBubble>
         <UserMessageContent
           contentRender={contentRender}

@@ -5,6 +5,7 @@ import { useMountEffect } from '@/hooks/useMountEffect';
 import { useDesktopZoom } from '@/hooks/useDesktopZoom';
 import { useAppBadge } from '@/hooks/useAppBadge';
 import { Layout } from '@/components/layout/Layout/Layout';
+import { HubPage } from '@/hub/HubPage';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from '@/store/authStore';
 import { useOnlineRemoteMachineIds } from '@/store/machineStore';
@@ -144,6 +145,18 @@ function AppContent() {
                 <LandingPage />
               </Layout>
             )
+          }
+        />
+        <Route
+          path="/hub"
+          element={
+            <AuthRoute
+              isAuthenticated={isSessionAuthenticated}
+              requireAuth={true}
+              showLoading={showLoading}
+            >
+              <HubPage />
+            </AuthRoute>
           }
         />
         <Route

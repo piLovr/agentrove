@@ -21,6 +21,17 @@
   flex: 1;
 }
 
+// Own messages on the right, like other chat apps (Agent Hub fork).
+.message-row--own .message-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.message-row--own .user-bubble {
+  max-width: min(85%, 46rem);
+}
+
 .user-bubble {
   display: inline-block;
   max-width: 100%;
