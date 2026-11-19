@@ -30,3 +30,13 @@ A merge conflict opens an issue listing the files. Nothing deploys by itself.
 
 Use the compose file in the agent-hub repository. Never run this backend privileged
 or with `docker.sock`: it uses host sandbox mode.
+
+## Remote Control (per chat)
+
+Claude Code Remote Control only exists for interactive `claude`, so
+`backend/app/services/remote_control.py` resumes a chat's Claude session in an interactive
+`claude --remote-control --resume <session>` process on a pty. It is stopped while an Agentrove turn
+runs and restarted afterwards (one process per transcript). `chats.remote_control` (default on,
+migration `a9b8c7d6e5f4`) is toggled from `frontend/src/hub/HubRemoteControl.tsx`. The folder-trust and
+bypass-permissions dialogs are accepted in the agent HOME's config, never by sending keystrokes.
+Env: `REMOTE_CONTROL_ENABLED` (true), `REMOTE_CONTROL_MAX_PROCESSES` (3).

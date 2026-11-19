@@ -35,6 +35,7 @@ def downgrade() -> None:
 COLUMN_VALUES = {("channel_messages", "status"): "completed"}
 NEW_TABLES = {"instance", "paired_devices", "pairing_secrets"}
 ADDED_TO_BASE_TABLES = {
+    "chats": {("column", "remote_control", "BOOLEAN", 1, "1", 0)},
     "refresh_tokens": {
         ("column", "device_id", "CHAR(32)", 0, None, 0),
         ("index", "ix_refresh_tokens_device_id", 0, "c", 0, ("device_id",)),

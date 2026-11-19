@@ -45,7 +45,7 @@ export interface InputActions {
   setShowFileUpload: (v: boolean) => void;
   onModelChange: (modelId: string) => void;
   handleSubmit: (e: React.FormEvent) => void;
-  submitOrStop: () => void;
+  submitOrStop: (options?: { forceQueue?: boolean }) => void;
   handleKeyDown: (e: React.KeyboardEvent<Element>) => void;
   handleSendClick: (e: React.MouseEvent) => void;
   handleEnhancePrompt: () => void;

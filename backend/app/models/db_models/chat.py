@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     ColumnElement,
     Float,
     ForeignKey,
@@ -13,7 +14,7 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy import Enum as SQLAlchemyEnum
-from sqlalchemy import JSON
+from sqlalchemy import JSON, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base_class import Base
@@ -49,6 +50,11 @@ class Chat(Base):
     )
     last_event_seq: Mapped[int] = mapped_column(
         BigInteger, default=0, server_default="0", nullable=False
+    )
+    # Hub fork: expose this chat's Claude session via Remote Control (claude.ai /
+    # desktop app) while no Agentrove turn is running. Claude chats only.
+    remote_control: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
     )
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     pinned_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
@@ -91,6 +97,12 @@ class Chat(Base):
     @classmethod
     def is_visible(cls) -> ColumnElement[bool]:
         return cls.channel_id.is_(None)
+
+    @property
+    def remote_control_active(self) -> bool:
+        from app.services.remote_control import remote_control
+
+        return remote_control.is_active(str(self.id))
 
     @property
     def unread(self) -> bool:

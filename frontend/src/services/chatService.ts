@@ -237,7 +237,8 @@ async function createChat(data: CreateChatRequest): Promise<Chat> {
   });
 }
 
-async function updateChat(chatId: string, updateData: { title?: string }): Promise<Chat> {
+async function updateChat(chatId: string, updateData: { title?: string; remote_control?: boolean },
+): Promise<Chat> {
   validateId(chatId, 'Chat ID');
 
   return serviceCall(async () => {

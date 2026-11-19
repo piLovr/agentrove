@@ -265,7 +265,7 @@ export const useCreateChatMutation = createMutation<Chat, Error, CreateChatReque
 export const useUpdateChatMutation = createMutation<
   Chat,
   Error,
-  { chatId: string; updateData: { title?: string } }
+  { chatId: string; updateData: { title?: string; remote_control?: boolean } }
 >(
   ({ chatId, updateData }) => chatService.updateChat(chatId, updateData),
   (queryClient, updatedChat) => {

@@ -97,6 +97,8 @@ export interface Chat {
   channel_id: string | null;
   sub_thread_count: number;
   session_agent_kind: AgentKind | null;
+  remote_control?: boolean;
+  remote_control_active?: boolean;
   unread: boolean;
   last_model_id: string | null;
   last_permission_mode?: PermissionMode | null;

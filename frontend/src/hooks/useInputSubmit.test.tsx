@@ -68,8 +68,14 @@ function fakeForm() {
   return { requestSubmit, formRef: { current: { requestSubmit } as unknown as HTMLFormElement } };
 }
 
-function keyDown(key: string, shiftKey = false) {
-  return { key, shiftKey, preventDefault: vi.fn() } as unknown as React.KeyboardEvent<Element>;
+function keyDown(key: string, shiftKey = false, ctrlKey = false) {
+  return {
+    key,
+    shiftKey,
+    ctrlKey,
+    metaKey: false,
+    preventDefault: vi.fn(),
+  } as unknown as React.KeyboardEvent<Element>;
 }
 
 const queuedContents = () =>
@@ -156,5 +162,40 @@ describe('useInputSubmit — keyboard handling', () => {
     act(() => result.current.handleKeyDown(e));
     expect(e.preventDefault).not.toHaveBeenCalled();
     expect(requestSubmit).not.toHaveBeenCalled();
+  });
+});
+
+describe('useInputSubmit — Hub additions', () => {
+  it('Ctrl+Enter queues instead of steering even when auto-steer is on', async () => {
+    appQueryClient.setQueryData([queryKeys.settings], {
+      auto_steer_queued_messages: true,
+    } as UserSettings);
+    const { result } = render({ isStreaming: true });
+    act(() => result.current.handleKeyDown(keyDown('Enter', false, true)));
+    await waitFor(() => expect(queueMessage).toHaveBeenCalledTimes(1));
+    expect(queueMessage.mock.calls[0][3]).toMatchObject({ sendNow: false });
+  });
+
+  it('plain Enter still steers when auto-steer is on', async () => {
+    appQueryClient.setQueryData([queryKeys.settings], {
+      auto_steer_queued_messages: true,
+    } as UserSettings);
+    const { result } = render({ isStreaming: true });
+    act(() => result.current.handleKeyDown(keyDown('Enter')));
+    await waitFor(() => expect(queueMessage).toHaveBeenCalledTimes(1));
+    expect(queueMessage.mock.calls[0][3]).toMatchObject({ sendNow: true });
+  });
+
+  it('/btw <question> opens a side thread and sends nothing to the main chat', () => {
+    const onSideQuestion = vi.fn();
+    const { opts, result } = render({
+      isStreaming: true,
+      messageRef: { current: '/btw what does foo do?' },
+      onSideQuestion,
+    });
+    act(() => result.current.submitOrStop());
+    expect(onSideQuestion).toHaveBeenCalledWith('what does foo do?');
+    expect(queueMessage).not.toHaveBeenCalled();
+    expect(opts.onSubmit).not.toHaveBeenCalled();
   });
 });

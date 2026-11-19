@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -26,6 +27,7 @@ from app.constants import (
 from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models.db_models.chat import Chat, ChatCheckpoint, Message
+from app.services.remote_control import remote_control
 from app.models.db_models.enums import MessageRole, MessageStreamStatus
 from app.models.db_models.user import User, UserSettings
 from app.models.schemas.queue import QueuedMessage
@@ -1269,11 +1271,19 @@ class ChatStreamRuntime:
     @asynccontextmanager
     async def _registered(self) -> AsyncIterator[None]:
         self._active_runtimes[self.chat_id] = self
+        # Hub fork: one process per transcript — pause Remote Control for the turn.
+        with contextlib.suppress(Exception):
+            await remote_control.stop(self.chat_id)
         try:
             yield
         finally:
             if self._active_runtimes.get(self.chat_id) is self:
                 self._active_runtimes.pop(self.chat_id)
+            task = asyncio.create_task(
+                remote_control.sync(self.chat_id, self.session_factory)
+            )
+            self._bg_tasks.add(task)
+            task.add_done_callback(self._bg_tasks.discard)
 
     @classmethod
     async def cancel_device_turns(cls, device_ids: frozenset[UUID]) -> None:

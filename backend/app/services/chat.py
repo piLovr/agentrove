@@ -21,6 +21,7 @@ from app.models.db_models.enums import MessageRole, StreamEventKind
 from app.models.db_models.user import User
 from app.models.db_models.workspace import Workspace
 from app.models.schemas.chat import Chat as ChatSchema
+from app.services.remote_control import remote_control
 from app.models.schemas.chat import (
     ActiveStreamStatus,
     ChatCreate,
@@ -523,6 +524,13 @@ class ChatService(BaseDbService[Chat]):
                     datetime.now(timezone.utc) if chat_update.pinned else None
                 )
 
+            remote_changed = (
+                chat_update.remote_control is not None
+                and chat_update.remote_control != chat.remote_control
+            )
+            if chat_update.remote_control is not None:
+                chat.remote_control = chat_update.remote_control
+
             # Rename/pin isn't new content — carry read state across the
             # updated_at bump so an already-read chat doesn't flip to unread.
             was_read = not chat.unread
@@ -531,6 +539,20 @@ class ChatService(BaseDbService[Chat]):
             if was_read:
                 chat.last_viewed_at = now
             await db.commit()
+
+            if remote_changed or chat_update.title is not None:
+                # Restart so the new switch state / title takes effect now; a
+                # running turn owns the transcript, so leave it alone then.
+                await remote_control.stop(str(chat_id))
+                from app.services.streaming.runtime import ChatStreamRuntime
+
+                if (
+                    chat.remote_control
+                    and str(chat_id) not in ChatStreamRuntime._active_runtimes
+                ):
+                    asyncio.create_task(
+                        remote_control.sync(str(chat_id), self.session_factory)
+                    )
 
             return chat
 
@@ -688,6 +710,7 @@ class ChatService(BaseDbService[Chat]):
                 [str(cid) for cid in (chat_id, *sub_thread_ids)]
             )
 
+            asyncio.create_task(remote_control.stop(str(chat_id)))
             asyncio.create_task(session_registry.terminate(str(chat_id)))
             for sub_id in sub_thread_ids:
                 asyncio.create_task(session_registry.terminate(str(sub_id)))

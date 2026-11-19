@@ -7,6 +7,7 @@ import { isAssistantMessage } from '@/utils/message';
 import { UserMessage, AssistantMessage } from '@/components/chat/message-bubble/Message';
 import { ChatQueueBanner } from './ChatQueueBanner';
 import { HubJobStatus } from '@/hub/HubJobStatus';
+import { HubRemoteControl } from '@/hub/HubRemoteControl';
 import { ChatInlinePermission } from './ChatInlinePermission';
 import { ChatInlineElicitation } from './ChatInlineElicitation';
 import { StreamActionsBar } from './StreamActionsBar';
@@ -326,6 +327,7 @@ export const Chat = memo(function Chat() {
       composerBanner={
         <>
           <HubJobStatus chatId={chatId} />
+          <HubRemoteControl chatId={chatId} />
           <ChatQueueBanner
             messages={pendingMessages}
             onCancel={handleCancelMessage}

@@ -118,6 +118,11 @@ BUILTIN_SLASH_COMMANDS: dict[AgentKind, list[dict[str, str]]] = {
     AgentKind.ANTIGRAVITY: [],
     AgentKind.CLAUDE: [
         {
+            "value": "/btw",
+            "label": "Btw",
+            "description": "Ask a side question in a sub-thread without interrupting the current turn: /btw [question]",
+        },
+        {
             "value": "/compact",
             "label": "Compact",
             "description": "Free up context by summarizing the conversation so far. Optional: /compact [instructions for summarization]",
@@ -239,6 +244,11 @@ BUILTIN_SLASH_COMMANDS: dict[AgentKind, list[dict[str, str]]] = {
         },
     ],
     AgentKind.CODEX: [
+        {
+            "value": "/btw",
+            "label": "Btw",
+            "description": "Ask a side question in a sub-thread without interrupting the current turn: /btw [question]",
+        },
         {
             "value": "/review",
             "label": "Review",

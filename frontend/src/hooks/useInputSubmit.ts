@@ -43,7 +43,11 @@ interface UseInputSubmitOptions {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   handleMentionKeyDown: (e: React.KeyboardEvent<Element>) => boolean;
   handleSlashCommandKeyDown: (e: React.KeyboardEvent<Element>) => boolean;
+  // Hub fork: `/btw <question>` opens a side thread instead of interrupting this chat.
+  onSideQuestion?: (question: string) => void;
 }
+
+const BTW_PATTERN = /^\/btw\s+([\s\S]+)/;
 
 // Submit/stop/queue logic plus the keyboard wiring around it — Enter-to-send,
 // suggestion-aware key handling, token-pill deletion, and selection removal.
@@ -69,6 +73,7 @@ export function useInputSubmit({
   textareaRef,
   handleMentionKeyDown,
   handleSlashCommandKeyDown,
+  onSideQuestion,
 }: UseInputSubmitOptions) {
   const { permissionMode, thinkingMode, persona } = useChatSettings(chatId);
   const handleSubmit = useCallback(
@@ -83,112 +88,128 @@ export function useInputSubmit({
     [disabled, hasContent, onSubmit, setPreviewDismissed],
   );
 
-  const submitOrStop = useCallback(() => {
-    if (isStreaming && !hasContent) {
-      onStopStream?.();
-      return;
-    }
-
-    if (disabled) return;
-
-    if (isStreaming && hasContent && chatId) {
-      // Fire-and-forget queue + clear draft — guard model or the message is lost.
-      if (!selectedModelId) {
-        toast.error('Please select an AI model');
+  // forceQueue (Ctrl/Cmd+Enter): while a turn runs, always append to the queue,
+  // even when the "auto-steer queued messages" setting would send it right now.
+  const submitOrStop = useCallback(
+    (options?: { forceQueue?: boolean }) => {
+      const forceQueue = options?.forceQueue === true;
+      if (isStreaming && !hasContent) {
+        onStopStream?.();
         return;
       }
-      const settings = useChatSettingsStore.getState();
-      const effectivePermissionMode = coercePermissionModeForAgent(permissionMode, agentKind);
-      const effectiveThinkingMode = coerceThinkingModeForAgent(
-        thinkingMode,
-        agentKind,
-        selectedModel,
-      );
-      const worktree = settings.worktreeByChat[chatId] ?? DEFAULT_WORKTREE;
-      const baseBranch = settings.worktreeBaseBranchByChat[chatId];
-      const fastMode = settings.fastModeByChat[chatId] ?? DEFAULT_FAST_MODE;
-      const validPersona = resolvePersona(persona, personas);
-      const text = messageRef.current;
-      const fullMessage = formatComposerSelections(attachedSelections, text.trim());
-      void fetchAutoSteerQueuedMessages(queryClient, chatMachineId(chatId))
-        .then(async (sendNow) => {
-          const result = await useMessageQueueStore
-            .getState()
-            .queueMessage(chatId, fullMessage, selectedModelId, {
-              permissionMode: effectivePermissionMode,
-              thinkingMode: effectiveThinkingMode,
-              worktree,
-              baseBranch,
-              fastMode,
-              selectedPersonaName: validPersona,
-              files: attachedFiles ?? undefined,
-              sendNow,
-            });
-          if (result.send_now_failed) {
-            void useMessageQueueStore.getState().fetchQueue(chatId);
-          }
-          if (sendNow && !useStreamStore.getState().getStreamByChat(chatId)) {
-            void queryClient.invalidateQueries({ queryKey: queryKeys.messages(chatId) });
-          }
-        })
-        .catch((error: unknown) => {
-          setMessage(messageRef.current ? `${text}\n${messageRef.current}` : text);
-          onAttach?.(attachedFiles ?? []);
-          attachedSelections.forEach((selection) =>
-            useUIStore.getState().addComposerSelection(chatId, selection),
-          );
-          toast.error(error instanceof Error ? error.message : 'Failed to send message');
-        });
-      setMessage('');
-      onAttach?.([]);
-      if (attachedSelections.length > 0) useUIStore.getState().clearComposerSelections(chatId);
+
+      if (disabled) return;
+
+      const btw = BTW_PATTERN.exec(messageRef.current.trim());
+      if (btw && onSideQuestion && chatId) {
+        onSideQuestion(btw[1].trim());
+        setMessage('');
+        setPreviewDismissed(true);
+        return;
+      }
+
+      if (isStreaming && hasContent && chatId) {
+        // Fire-and-forget queue + clear draft — guard model or the message is lost.
+        if (!selectedModelId) {
+          toast.error('Please select an AI model');
+          return;
+        }
+        const settings = useChatSettingsStore.getState();
+        const effectivePermissionMode = coercePermissionModeForAgent(permissionMode, agentKind);
+        const effectiveThinkingMode = coerceThinkingModeForAgent(
+          thinkingMode,
+          agentKind,
+          selectedModel,
+        );
+        const worktree = settings.worktreeByChat[chatId] ?? DEFAULT_WORKTREE;
+        const baseBranch = settings.worktreeBaseBranchByChat[chatId];
+        const fastMode = settings.fastModeByChat[chatId] ?? DEFAULT_FAST_MODE;
+        const validPersona = resolvePersona(persona, personas);
+        const text = messageRef.current;
+        const fullMessage = formatComposerSelections(attachedSelections, text.trim());
+        void fetchAutoSteerQueuedMessages(queryClient, chatMachineId(chatId))
+          .then(async (autoSteer) => {
+            const sendNow = forceQueue ? false : autoSteer;
+            const result = await useMessageQueueStore
+              .getState()
+              .queueMessage(chatId, fullMessage, selectedModelId, {
+                permissionMode: effectivePermissionMode,
+                thinkingMode: effectiveThinkingMode,
+                worktree,
+                baseBranch,
+                fastMode,
+                selectedPersonaName: validPersona,
+                files: attachedFiles ?? undefined,
+                sendNow,
+              });
+            if (result.send_now_failed) {
+              void useMessageQueueStore.getState().fetchQueue(chatId);
+            }
+            if (sendNow && !useStreamStore.getState().getStreamByChat(chatId)) {
+              void queryClient.invalidateQueries({ queryKey: queryKeys.messages(chatId) });
+            }
+          })
+          .catch((error: unknown) => {
+            setMessage(messageRef.current ? `${text}\n${messageRef.current}` : text);
+            onAttach?.(attachedFiles ?? []);
+            attachedSelections.forEach((selection) =>
+              useUIStore.getState().addComposerSelection(chatId, selection),
+            );
+            toast.error(error instanceof Error ? error.message : 'Failed to send message');
+          });
+        setMessage('');
+        onAttach?.([]);
+        if (attachedSelections.length > 0) useUIStore.getState().clearComposerSelections(chatId);
+        setPreviewDismissed(true);
+        return;
+      }
+
+      if (isLoading) {
+        onStopStream?.();
+        return;
+      }
+
+      if (!hasContent) return;
+
       setPreviewDismissed(true);
-      return;
-    }
 
-    if (isLoading) {
-      onStopStream?.();
-      return;
-    }
+      const formElement = formRef.current;
+      if (formElement && typeof formElement.requestSubmit === 'function') {
+        formElement.requestSubmit();
+        return;
+      }
 
-    if (!hasContent) return;
-
-    setPreviewDismissed(true);
-
-    const formElement = formRef.current;
-    if (formElement && typeof formElement.requestSubmit === 'function') {
-      formElement.requestSubmit();
-      return;
-    }
-
-    const formEvent = new Event('submit', {
-      bubbles: true,
-      cancelable: true,
-    }) as unknown as React.FormEvent;
-    onSubmit(formEvent);
-  }, [
-    disabled,
-    hasContent,
-    isLoading,
-    isStreaming,
-    onStopStream,
-    onSubmit,
-    chatId,
-    attachedFiles,
-    attachedSelections,
-    setMessage,
-    onAttach,
-    agentKind,
-    selectedModelId,
-    selectedModel,
-    personas,
-    permissionMode,
-    thinkingMode,
-    persona,
-    formRef,
-    messageRef,
-    setPreviewDismissed,
-  ]);
+      const formEvent = new Event('submit', {
+        bubbles: true,
+        cancelable: true,
+      }) as unknown as React.FormEvent;
+      onSubmit(formEvent);
+    },
+    [
+      onSideQuestion,
+      disabled,
+      hasContent,
+      isLoading,
+      isStreaming,
+      onStopStream,
+      onSubmit,
+      chatId,
+      attachedFiles,
+      attachedSelections,
+      setMessage,
+      onAttach,
+      agentKind,
+      selectedModelId,
+      selectedModel,
+      personas,
+      permissionMode,
+      thinkingMode,
+      persona,
+      formRef,
+      messageRef,
+      setPreviewDismissed,
+    ],
+  );
 
   const handleRemoveSelection = useCallback(
     (index: number) => {
@@ -211,7 +232,7 @@ export function useInputSubmit({
 
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
-        submitOrStop();
+        submitOrStop({ forceQueue: event.ctrlKey || event.metaKey });
       }
     },
     [handleMentionKeyDown, handleSlashCommandKeyDown, handleTokenDeleteKeyDown, submitOrStop],

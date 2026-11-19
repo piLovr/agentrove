@@ -36,6 +36,7 @@ from app.db.session import SessionLocal, engine
 from app.services.agent import MCP_SERVER_PATH, AgentService
 from app.services.channel import channel_service
 from app.services.maintenance import MaintenanceService
+from app.services.remote_control import remote_control
 from app.services.session_registry import session_registry
 from app.services.streaming.runtime import ChatStreamRuntime
 from app.services.terminal import terminal_session_registry
@@ -71,6 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await channel_service.shutdown()
         await maintenance_service.stop()
         await ChatStreamRuntime.stop_background_chats()
+        await remote_control.stop_all()
         await session_registry.terminate_all()
         # Host-provider shells keep running after exit unless PTYs/tmux die.
         await terminal_session_registry.terminate_all()

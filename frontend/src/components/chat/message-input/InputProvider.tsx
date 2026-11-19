@@ -1,4 +1,10 @@
-import { useRef, useState, useMemo, type ReactNode } from 'react';
+import { useCallback, useRef, useState, useMemo, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import { queryClient } from '@/lib/queryClient';
+import { queryKeys } from '@/hooks/queries/queryKeys';
+import { chatService } from '@/services/chatService';
+import { useModelStore } from '@/store/modelStore';
 import { useAuthStore } from '@/store/authStore';
 import { useUIStore, type ComposerSelection } from '@/store/uiStore';
 import { useChatMachineId } from '@/store/machineOrigin';
@@ -138,6 +144,36 @@ export function InputProvider({
     agentKind,
   });
 
+  const navigate = useNavigate();
+  // `/btw <question>`: ask in a sub-thread of this chat so the main turn is not disturbed.
+  const handleSideQuestion = useCallback(
+    (question: string) => {
+      if (!chatId || !selectedModelId) return;
+      const parent = queryClient.getQueryData<Chat>(queryKeys.chat(chatId));
+      if (!parent) {
+        toast.error('Chat is still loading');
+        return;
+      }
+      void chatService
+        .createChat({
+          title: `btw: ${question}`.slice(0, 80),
+          model_id: selectedModelId,
+          workspace_id: parent.workspace_id,
+          parent_chat_id: chatId,
+        })
+        .then((newChat) => {
+          useModelStore.getState().selectModel(newChat.id, selectedModelId);
+          void queryClient.invalidateQueries({ queryKey: queryKeys.subThreads(chatId) });
+          void queryClient.invalidateQueries({ queryKey: [queryKeys.chats, 'infinite'] });
+          navigate(`/chat/${newChat.id}`, { state: { initialPrompt: question } });
+        })
+        .catch((error: unknown) => {
+          toast.error(error instanceof Error ? error.message : 'Failed to start side thread');
+        });
+    },
+    [chatId, selectedModelId, navigate],
+  );
+
   const { handleSubmit, submitOrStop, handleRemoveSelection, handleKeyDown, handleSendClick } =
     useInputSubmit({
       disabled,
@@ -161,9 +197,12 @@ export function InputProvider({
       textareaRef,
       handleMentionKeyDown,
       handleSlashCommandKeyDown,
+      onSideQuestion: handleSideQuestion,
     });
 
-  const dynamicPlaceholder = isStreaming ? 'Type to queue message...' : placeholder;
+  const dynamicPlaceholder = isStreaming
+    ? 'Type to queue message (Ctrl+Enter always queues)...'
+    : placeholder;
 
   const stateValue: InputState = useMemo(
     () => ({

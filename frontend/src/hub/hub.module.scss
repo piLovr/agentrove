@@ -144,3 +144,21 @@
   width: 100%;
   border: 0;
 }
+
+.remote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: var(--theme-surface-hover);
+  color: var(--theme-text-secondary);
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+}

@@ -210,6 +210,9 @@ class Settings(BaseSettings):
     # Idle reaping is lossless (session_id persists); trades respawn latency
     # for ~500MB per warm session (agent CLI + wrapper + MCP server).
     CHAT_PROCESS_IDLE_TTL_SECONDS: float = 600.0
+    # Hub fork: Claude Remote Control for chats (interactive `claude --remote-control`).
+    REMOTE_CONTROL_ENABLED: bool = True
+    REMOTE_CONTROL_MAX_PROCESSES: int = 3
 
     class Config:
         env_file = ".env"

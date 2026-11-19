@@ -79,6 +79,7 @@ class ChatCreate(ChatBase):
 class ChatUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=255)
     pinned: bool | None = None
+    remote_control: bool | None = None
 
 
 class Chat(ChatBase):
@@ -97,6 +98,8 @@ class Chat(ChatBase):
     channel_id: UUID | None = None
     sub_thread_count: int = 0
     session_agent_kind: str | None = None
+    remote_control: bool = True
+    remote_control_active: bool = False
     unread: bool = False
     last_model_id: str | None = None
     last_permission_mode: PermissionMode | None = None
