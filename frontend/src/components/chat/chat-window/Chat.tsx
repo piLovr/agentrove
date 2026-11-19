@@ -1,4 +1,4 @@
-import { useCallback, useEffect, memo, useMemo } from 'react';
+import { useCallback, useEffect, memo, useMemo, useState } from 'react';
 import { useChatMachineId } from '@/store/machineOrigin';
 import { useMachineName, useMachineStatus } from '@/store/machineStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -24,6 +24,7 @@ import { FindInChat } from './FindInChat';
 import { ChatSelectionActions } from './ChatSelectionActions';
 import { StatusTypewriter } from './StatusTypewriter';
 import { useChatScroll } from './useChatScroll';
+import { TextRevealContext, type TextReveal } from './TextRevealContext';
 import { useStreamStore } from '@/store/streamStore';
 import { useMessageQueueStore, EMPTY_QUEUE, sendQueuedMessageNow } from '@/store/messageQueueStore';
 import { useChatContext } from '@/hooks/useChatContext';
@@ -160,6 +161,49 @@ export const Chat = memo(function Chat() {
 
   const lastBotMessageId = lastBotMessage?.id ?? null;
 
+  // A reply whose stream has ended keeps its streaming presentation until the turn is
+  // idle and its text has finished revealing, so the action row, the suggestions and the
+  // collapsed trace land in one commit instead of one per state source.
+  const [settlingMessageId, setSettlingMessageId] = useState<string | null>(null);
+  const [revealingTextCount, setRevealingTextCount] = useState(0);
+  // Trailer slots the ended reply did not fill stay reserved until the next send.
+  const [endedMessageId, setEndedMessageId] = useState<string | null>(null);
+  const [prevStreamingIds, setPrevStreamingIds] = useState(streamingMessageIdSet);
+  if (prevStreamingIds !== streamingMessageIdSet) {
+    setPrevStreamingIds(streamingMessageIdSet);
+    if (
+      lastBotMessageId &&
+      prevStreamingIds.has(lastBotMessageId) &&
+      !streamingMessageIdSet.has(lastBotMessageId)
+    ) {
+      setSettlingMessageId(lastBotMessageId);
+      setEndedMessageId(lastBotMessageId);
+    }
+  }
+  const lastBotStreams = !!lastBotMessageId && streamingMessageIdSet.has(lastBotMessageId);
+  // A new send lands the rest at once, in the commit the send anchor measures.
+  const lastBotSettling =
+    !lastBotStreams &&
+    lastBotMessageId !== null &&
+    settlingMessageId === lastBotMessageId &&
+    !pendingUserMessageId &&
+    (isStreaming || revealingTextCount > 0);
+  if (settlingMessageId !== null && !lastBotSettling) {
+    setSettlingMessageId(null);
+  }
+  const lastBotIsStreaming = lastBotStreams || lastBotSettling;
+  const lastBotHoldsTrailer =
+    endedMessageId === lastBotMessageId && !lastBotIsStreaming && !isStreaming && !isLoading;
+  const beginTextReveal = useCallback(() => setRevealingTextCount((count) => count + 1), []);
+  // A frame later, so the last words paint before the reply settles instead of with it.
+  const endTextReveal = useCallback(() => {
+    requestAnimationFrame(() => setRevealingTextCount((count) => count - 1));
+  }, []);
+  const textReveal = useMemo<TextReveal>(
+    () => ({ streamEnded: lastBotSettling, begin: beginTextReveal, end: endTextReveal }),
+    [lastBotSettling, beginTextReveal, endTextReveal],
+  );
+
   const {
     scrollerRef,
     turnRef,
@@ -170,6 +214,7 @@ export const Chat = memo(function Chat() {
   } = useChatScroll({
     chatId,
     messages,
+    lastReplyStreams: lastBotIsStreaming,
     pendingUserMessageId,
     latestUserMessageId,
     hasNextPage,
@@ -193,7 +238,6 @@ export const Chat = memo(function Chat() {
 
   const canShowPermissionInline =
     pendingPermissionRequest && pendingPermissionRequest.tool_name !== 'ExitPlanMode';
-  const lastBotIsStreaming = !!lastBotMessageId && streamingMessageIdSet.has(lastBotMessageId);
   const lastBotHasContent =
     !!lastBotMessage &&
     ((lastBotMessage.content_render?.events?.length ?? 0) > 0 || !!lastBotMessage.content_text);
@@ -221,12 +265,16 @@ export const Chat = memo(function Chat() {
     !lastBotIsStreaming &&
     !isStreaming &&
     !isLoading;
+  const showStreamActionsSlot =
+    showStreamActions || ((lastBotIsStreaming || lastBotHoldsTrailer) && lastBotHasContent);
 
   const renderMessage = useCallback(
     (msg: (typeof messages)[number], hasReply: boolean) => {
-      const messageIsStreaming = streamingMessageIdSet.has(msg.id);
       const isBotMessage = isAssistantMessage(msg);
       const isLastBotMessage = isBotMessage && msg.id === lastBotMessageId;
+      const messageIsStreaming = isLastBotMessage
+        ? lastBotIsStreaming
+        : streamingMessageIdSet.has(msg.id);
       if (isLastBotMessage && lastBotRowHidden) {
         return null;
       }
@@ -247,25 +295,30 @@ export const Chat = memo(function Chat() {
       return (
         <ConversationColumn>
           {isBotMessage ? (
-            <AssistantMessage
-              id={msg.id}
-              contentText={msg.content_text}
-              contentRender={msg.content_render}
-              attachments={attachments}
-              isStreaming={messageIsStreaming}
-              createdAt={msg.created_at}
-              modelId={msg.model_id ?? undefined}
-              durationMs={msg.duration_ms}
-              checkpointId={msg.checkpoint_id}
-              toolResultsOmitted={msg.tool_results_omitted}
-              isCompleted={msg.stream_status === 'completed'}
-              // Idle-gated so prompt suggestions unmount in the send commit itself —
-              // unmounting when the placeholder lands shifts the anchored turn late.
-              isLastBotMessage={
-                isLastBotMessage && !messageIsStreaming && !isLoading && !isStreaming
-              }
-              isLatest={msg.id === latestMessageId}
-            />
+            <TextRevealContext value={isLastBotMessage && lastBotIsStreaming ? textReveal : null}>
+              <AssistantMessage
+                id={msg.id}
+                contentText={msg.content_text}
+                contentRender={msg.content_render}
+                attachments={attachments}
+                isStreaming={messageIsStreaming}
+                createdAt={msg.created_at}
+                modelId={msg.model_id ?? undefined}
+                durationMs={msg.duration_ms}
+                checkpointId={msg.checkpoint_id}
+                toolResultsOmitted={msg.tool_results_omitted}
+                isCompleted={msg.stream_status === 'completed'}
+                // Idle-gated so prompt suggestions unmount in the send commit itself —
+                // unmounting when the placeholder lands shifts the anchored turn late.
+                isLastBotMessage={
+                  isLastBotMessage && !messageIsStreaming && !isLoading && !isStreaming
+                }
+                isLatest={msg.id === latestMessageId}
+                // An inline prompt sits right under the reply, with no gap for the trailer
+                reserveTrailer={messageIsStreaming && !showPermissionAtEnd && !showElicitationAtEnd}
+                holdTrailer={isLastBotMessage && lastBotHoldsTrailer}
+              />
+            </TextRevealContext>
           ) : (
             <UserMessage
               id={msg.id}
@@ -291,11 +344,16 @@ export const Chat = memo(function Chat() {
       isLoading,
       isStreaming,
       lastBotRowHidden,
+      lastBotHoldsTrailer,
+      lastBotIsStreaming,
       lastBotMessageId,
       latestMessageId,
       latestUserMessageId,
       pendingUserMessageId,
+      showElicitationAtEnd,
+      showPermissionAtEnd,
       streamingMessageIdSet,
+      textReveal,
     ],
   );
 
@@ -310,7 +368,7 @@ export const Chat = memo(function Chat() {
       !showThinking &&
       !showPermissionAtEnd &&
       !showElicitationAtEnd &&
-      !(showStreamActions && chatId)
+      !(showStreamActionsSlot && chatId)
     ) {
       return null;
     }
@@ -320,7 +378,9 @@ export const Chat = memo(function Chat() {
         {showThinking && <StatusTypewriter streamStartTime={streamStartTime} />}
         {showPermissionAtEnd && <ChatInlinePermission />}
         {showElicitationAtEnd && <ChatInlineElicitation />}
-        {showStreamActions && chatId && <StreamActionsBar chatId={chatId} />}
+        {showStreamActionsSlot && chatId && (
+          <StreamActionsBar chatId={chatId} pending={!showStreamActions} />
+        )}
       </ConversationColumn>
     );
   }, [
@@ -328,6 +388,7 @@ export const Chat = memo(function Chat() {
     showElicitationAtEnd,
     showPermissionAtEnd,
     showStreamActions,
+    showStreamActionsSlot,
     showThinking,
     streamStartTime,
   ]);
@@ -410,11 +471,7 @@ export const Chat = memo(function Chat() {
           </ConversationScroller>
           <MessageTrail messages={messages} scrollerRef={scrollerRef} />
           {/* Keyed by chat so query/match state resets on chat switch */}
-          <FindInChat
-            key={`find-${chatId ?? 'chat'}`}
-            messages={messages}
-            scrollerRef={scrollerRef}
-          />
+          <FindInChat key={`find-${chatId ?? 'chat'}`} scrollerRef={scrollerRef} />
         </>
       )}
     </ConversationLayout>

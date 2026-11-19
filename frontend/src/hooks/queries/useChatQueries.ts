@@ -1,4 +1,5 @@
 import {
+  infiniteQueryOptions,
   keepPreviousData,
   useInfiniteQuery,
   useMutation,
@@ -45,6 +46,19 @@ function invalidateMachineChats(queryClient: QueryClient, chatId: string) {
   }
 }
 
+export const infiniteChatsQueryKey = (options?: {
+  perPage?: number;
+  workspaceId?: string;
+  pinned?: boolean;
+}) =>
+  [
+    queryKeys.chats,
+    'infinite',
+    options?.perPage ?? CHATS_PER_PAGE,
+    options?.workspaceId ?? GLOBAL_WORKSPACE_SENTINEL,
+    options?.pinned ?? null,
+  ] as const;
+
 export const useInfiniteChatsQuery = (options?: {
   perPage?: number;
   workspaceId?: string;
@@ -56,13 +70,7 @@ export const useInfiniteChatsQuery = (options?: {
   const pinned = options?.pinned;
 
   return useInfiniteQuery({
-    queryKey: [
-      queryKeys.chats,
-      'infinite',
-      perPage,
-      workspaceId ?? GLOBAL_WORKSPACE_SENTINEL,
-      pinned ?? null,
-    ] as const,
+    queryKey: infiniteChatsQueryKey({ perPage, workspaceId, pinned }),
     queryFn: async ({ pageParam }) => {
       const page = pageParam as number;
       return chatService.listChats({
@@ -116,24 +124,29 @@ export const useSearchChatsQuery = (
   });
 };
 
-export const useInfiniteMessagesQuery = (
-  chatId: string | undefined,
-  limit: number = MESSAGE_PAGE_SIZE,
-) => {
-  return useInfiniteQuery({
+const messagesQuery = (chatId: string | undefined, limit: number = MESSAGE_PAGE_SIZE) =>
+  infiniteQueryOptions({
     queryKey: queryKeys.messages(chatId),
     queryFn: async ({ pageParam }) => {
       return chatService.getMessages(chatId!, {
-        cursor: pageParam as string | undefined,
+        cursor: pageParam,
         limit,
       });
     },
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     initialPageParam: undefined as string | undefined,
-    enabled: !!chatId,
     // Pages are small once tool results are omitted, so switching back to a
     // recent chat can skip the download.
     gcTime: 1000 * 60 * 10,
+  });
+
+export const useInfiniteMessagesQuery = (
+  chatId: string | undefined,
+  limit: number = MESSAGE_PAGE_SIZE,
+) => {
+  return useInfiniteQuery({
+    ...messagesQuery(chatId, limit),
+    enabled: !!chatId,
   });
 };
 
@@ -147,18 +160,38 @@ export const useMessageRenderQuery = (chatId: string, messageId: string, enabled
   });
 };
 
+const chatQuery = (chatId: string | undefined) => ({
+  queryKey: queryKeys.chat(chatId),
+  queryFn: () => chatService.getChat(chatId!),
+  gcTime: 1000 * 60 * 30,
+});
+
 export const useChatQuery = (
   chatId: string | undefined,
   options?: Partial<UseQueryOptions<Chat>>,
 ) => {
   return useQuery({
-    queryKey: queryKeys.chat(chatId),
-    queryFn: () => chatService.getChat(chatId!),
+    ...chatQuery(chatId),
     enabled: !!chatId,
-    gcTime: 1000 * 60 * 30,
     ...options,
   });
 };
+
+// Remote chats throw until their machine is online, which it never is this early.
+export function prefetchChatOpen(queryClient: QueryClient, chatId: string): void {
+  if (chatMachineId(chatId) !== LOCAL_MACHINE_ID) return;
+  void queryClient.prefetchQuery(chatQuery(chatId));
+  void queryClient.prefetchInfiniteQuery(messagesQuery(chatId));
+}
+
+// A failed lookup counts as top-level, so it notifies rather than drops.
+export async function fetchIsSubThread(queryClient: QueryClient, chatId: string): Promise<boolean> {
+  try {
+    return Boolean((await queryClient.ensureQueryData(chatQuery(chatId))).parent_chat_id);
+  } catch {
+    return false;
+  }
+}
 
 export const useContextUsageQuery = (
   chatId: string | undefined,

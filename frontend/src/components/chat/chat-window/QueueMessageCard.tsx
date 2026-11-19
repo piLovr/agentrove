@@ -1,11 +1,12 @@
-import { memo, useState, useCallback, useRef, useEffect } from 'react';
+import { memo, useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import clsx from 'clsx';
 import { X, Pencil, CornerDownRight, FileText, FileSpreadsheet, Send } from 'lucide-react';
 import { Button } from '@/components/ui/primitives/Button/Button';
-import { Input } from '@/components/ui/primitives/Input/Input';
 import { Spinner } from '@/components/ui/primitives/Spinner/Spinner';
+import { Textarea } from '@/components/ui/primitives/Textarea/Textarea';
 import { resolveChatClient } from '@/lib/api';
 import { useChatContext } from '@/hooks/useChatContext';
+import { useSetChatInputMessage } from '@/hooks/useChatInputMessageContext';
 import { detectFileType } from '@/utils/fileTypes';
 import { HighlightedText } from '@/components/ui/shared/HighlightedText/HighlightedText';
 import { fetchAttachmentBlob } from '@/utils/file';
@@ -21,6 +22,9 @@ interface QueueMessageCardProps {
   onCancel: (messageId: string) => void;
   onEdit: (messageId: string, newContent: string) => void;
   onSendNow: (messageId: string) => void;
+  rescued: boolean;
+  onDirtyChange: (key: string, dirty: boolean) => void;
+  onDiscard: (key: string) => void;
 }
 
 function UploadingOverlay() {
@@ -183,24 +187,66 @@ function AuthenticatedPreview({ attachment }: { attachment: QueueAttachment }) {
   );
 }
 
+function fitHeight(textarea: HTMLTextAreaElement) {
+  textarea.style.height = 'auto';
+  textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
 export const QueueMessageCard = memo(function QueueMessageCard({
   message,
   onCancel,
   onEdit,
   onSendNow,
+  rescued,
+  onDirtyChange,
+  onDiscard,
 }: QueueMessageCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const setComposerMessage = useSetChatInputMessage();
+  const draft = editContent.trim();
+  const isDirty = isEditing && draft !== '' && draft !== message.content;
   const hasLocalFiles = message.files && message.files.length > 0;
   const hasServerAttachments = message.attachments && message.attachments.length > 0;
 
+  useLayoutEffect(() => {
+    if (textareaRef.current) fitHeight(textareaRef.current);
+  }, [editContent, isEditing]);
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    let width = textarea.clientWidth;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (textarea.clientWidth === width) return;
+      width = textarea.clientWidth;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => fitHeight(textarea));
+    });
+    observer.observe(textarea);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [isEditing]);
+
   useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.setSelectionRange(editContent.length, editContent.length);
+    const textarea = textareaRef.current;
+    if (isEditing && textarea) {
+      const end = textarea.value.length;
+      textarea.focus();
+      textarea.setSelectionRange(end, end);
+      textarea.scrollTop = textarea.scrollHeight;
     }
-  }, [isEditing, editContent.length]);
+  }, [isEditing]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    onDirtyChange(message.key, true);
+    return () => onDirtyChange(message.key, false);
+  }, [isDirty, message.key, onDirtyChange]);
 
   const handleStartEdit = useCallback(() => {
     setEditContent(message.content);
@@ -213,31 +259,39 @@ export const QueueMessageCard = memo(function QueueMessageCard({
   }, [message.content]);
 
   const handleSaveEdit = useCallback(() => {
-    const trimmed = editContent.trim();
-    if (!trimmed) {
+    if (!draft) {
       onCancel(message.id);
     } else {
-      onEdit(message.id, trimmed);
+      onEdit(message.id, draft);
     }
     setIsEditing(false);
-  }, [editContent, message.id, onCancel, onEdit]);
+  }, [draft, message.id, onCancel, onEdit]);
+
+  const handleMoveToComposer = useCallback(() => {
+    if (draft) {
+      setComposerMessage((current) => (current.trim() ? `${current}\n\n${draft}` : draft));
+    }
+    onDiscard(message.key);
+  }, [draft, message.key, onDiscard, setComposerMessage]);
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.nativeEvent.isComposing) return;
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        handleSaveEdit();
-      } else if (e.key === 'Escape') {
+        if (rescued) handleMoveToComposer();
+        else handleSaveEdit();
+      } else if (e.key === 'Escape' && !rescued) {
         handleCancelEdit();
       }
     },
-    [handleSaveEdit, handleCancelEdit],
+    [rescued, handleMoveToComposer, handleSaveEdit, handleCancelEdit],
   );
 
   return (
     <div className={styles.card}>
       <div className={styles['card-row']}>
-        <div className={styles['card-main']}>
+        <div className={clsx(styles['card-main'], isEditing && styles['card-main--editing'])}>
           <CornerDownRight className={styles['reply-icon']} />
           {hasLocalFiles && !hasServerAttachments && (
             <div className={styles.thumbs}>
@@ -258,15 +312,15 @@ export const QueueMessageCard = memo(function QueueMessageCard({
             </div>
           )}
           {isEditing ? (
-            <Input
-              ref={inputRef}
+            <Textarea
+              ref={textareaRef}
               variant="unstyled"
-              type="text"
+              rows={1}
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
               onKeyDown={handleKeyDown}
               aria-label="Edit message"
-              className={styles['edit-input']}
+              className={styles['edit-textarea']}
             />
           ) : (
             <span className={styles['message-preview']}>
@@ -274,61 +328,84 @@ export const QueueMessageCard = memo(function QueueMessageCard({
             </span>
           )}
         </div>
-        <div className={styles['card-actions']}>
-          {message.sendingNow ? (
-            <span className={styles.sending}>
-              <Spinner size="xs" />
-              Sending...
-            </span>
-          ) : isEditing ? (
-            <>
-              <Button
-                onClick={handleSaveEdit}
-                variant="unstyled"
-                className={clsx(styles['action-btn'], styles['action-btn--save'])}
-              >
-                Save
-              </Button>
-              <Button
-                onClick={handleCancelEdit}
-                variant="unstyled"
-                className={clsx(styles['action-btn'], styles['action-btn--cancel-edit'])}
-              >
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <>
-              {message.synced && (
+        {!isEditing && (
+          <div className={styles['card-actions']}>
+            {message.sendingNow ? (
+              <span className={styles.sending}>
+                <Spinner size="xs" />
+                Sending...
+              </span>
+            ) : (
+              <>
+                {message.synced && (
+                  <Button
+                    onClick={() => onSendNow(message.id)}
+                    variant="unstyled"
+                    className={clsx(styles['action-btn'], styles['action-btn--icon'])}
+                    aria-label="Send now"
+                  >
+                    <Send className={styles['action-glyph']} />
+                  </Button>
+                )}
                 <Button
-                  onClick={() => onSendNow(message.id)}
+                  onClick={handleStartEdit}
                   variant="unstyled"
                   className={clsx(styles['action-btn'], styles['action-btn--icon'])}
-                  aria-label="Send now"
+                  aria-label="Edit message"
                 >
-                  <Send className={styles['action-glyph']} />
+                  <Pencil className={styles['action-glyph']} />
                 </Button>
-              )}
-              <Button
-                onClick={handleStartEdit}
-                variant="unstyled"
-                className={clsx(styles['action-btn'], styles['action-btn--icon'])}
-                aria-label="Edit message"
-              >
-                <Pencil className={styles['action-glyph']} />
-              </Button>
-              <Button
-                onClick={() => onCancel(message.id)}
-                variant="unstyled"
-                className={clsx(styles['action-btn'], styles['action-btn--delete'])}
-                aria-label="Cancel message"
-              >
-                <X className={styles['action-glyph']} />
-              </Button>
-            </>
-          )}
-        </div>
+                <Button
+                  onClick={() => onCancel(message.id)}
+                  variant="unstyled"
+                  className={clsx(styles['action-btn'], styles['action-btn--delete'])}
+                  aria-label="Cancel message"
+                >
+                  <X className={styles['action-glyph']} />
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
+      {rescued ? (
+        <div className={styles['edit-footer']}>
+          <span className={styles['rescued-note']}>Original already sent. Edit not saved.</span>
+          <Button
+            onClick={() => onDiscard(message.key)}
+            variant="unstyled"
+            className={clsx(styles['action-btn'], styles['action-btn--cancel-edit'])}
+          >
+            Discard
+          </Button>
+          <Button
+            onClick={handleMoveToComposer}
+            variant="unstyled"
+            className={clsx(styles['action-btn'], styles['action-btn--save'])}
+          >
+            Move to composer
+          </Button>
+        </div>
+      ) : (
+        isEditing && (
+          <div className={styles['edit-footer']}>
+            <Button
+              onClick={handleCancelEdit}
+              variant="unstyled"
+              className={clsx(styles['action-btn'], styles['action-btn--cancel-edit'])}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              variant="unstyled"
+              className={clsx(styles['action-btn'], styles['action-btn--save'])}
+            >
+              Save
+            </Button>
+          </div>
+        )
+      )}
     </div>
   );
 });

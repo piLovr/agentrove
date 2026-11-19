@@ -33,6 +33,15 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # Read-only: a cache saved from a tag ref is unreadable by later tags; desktop-rust-cache.yml saves it from main.
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri -> target
+          shared-key: desktop-release-${{ hashFiles('rust-toolchain.toml', 'frontend/src-tauri/Cargo.lock') }}
+          add-rust-environment-hash-key: false
+          save-if: false
+
       - name: Install frontend dependencies
         run: |
           cd frontend
@@ -79,3 +88,5 @@ jobs:
           SIDECAR="$APP/Contents/Resources/_up_/backend-sidecar"
           "$SIDECAR/python/bin/python3" -c 'import ssl, pydantic_core, uvloop, watchfiles, sqlalchemy'
           "$SIDECAR/node/bin/node" -e 'if (new Function("return 42")() !== 42) process.exit(1)'
+          "$SIDECAR/bin/claude" --version
+          test $(find "$SIDECAR" -type f -name 'claude*' -size +100M | wc -l) -eq 1

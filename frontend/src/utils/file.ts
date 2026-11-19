@@ -347,21 +347,27 @@ export async function downloadAttachmentFile(
     return;
   }
 
-  const blob =
-    fileUrl instanceof File
-      ? fileUrl
-      : await fetchAttachmentBlob(toDownloadUrl(fileUrl), apiClient);
-  const blobUrl = URL.createObjectURL(blob);
+  saveBlob(await resolveAttachmentBlob(fileUrl, apiClient), fileName);
+}
 
+export async function resolveAttachmentBlob(
+  fileUrl: string | File,
+  apiClient: { getBlob: (endpoint: string, signal?: AbortSignal) => Promise<Blob> },
+): Promise<Blob> {
+  return fileUrl instanceof File ? fileUrl : fetchAttachmentBlob(toDownloadUrl(fileUrl), apiClient);
+}
+
+export function saveBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
   try {
     const link = document.createElement('a');
-    link.href = blobUrl;
+    link.href = url;
     link.download = fileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   } finally {
-    URL.revokeObjectURL(blobUrl);
+    URL.revokeObjectURL(url);
   }
 }
 

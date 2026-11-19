@@ -1,5 +1,7 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route, matchPath } from 'react-router-dom';
 import { useEffect, useState, Suspense } from 'react';
+import { createPortal } from 'react-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { lazyNamed } from '@/utils/lazyNamed';
 import { useMountEffect } from '@/hooks/useMountEffect';
 import { useDesktopZoom } from '@/hooks/useDesktopZoom';
@@ -12,6 +14,7 @@ import { useOnlineRemoteMachineIds } from '@/store/machineStore';
 import { useResolvedTheme } from '@/hooks/useResolvedTheme';
 import { useUIStore } from '@/store/uiStore';
 import { useCurrentUserQuery } from '@/hooks/queries/useAuthQueries';
+import { prefetchChatOpen } from '@/hooks/queries/useChatQueries';
 import { LoadingScreen } from '@/components/ui/LoadingScreen/LoadingScreen';
 import { useGlobalStream } from '@/hooks/useGlobalStream';
 import { useLocalStreamRestoration } from '@/hooks/useLocalStreamRestoration';
@@ -31,7 +34,7 @@ import { useNotificationPermissionPrompt } from '@/hooks/useNotificationPermissi
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { isPairingHash } from '@/utils/machineUrl';
 import { PALETTES } from '@/styles/palettes';
-import { checkDesktopUpdate } from '@/services/desktopUpdateService';
+import { attachDesktopUpdate } from '@/services/desktopUpdateService';
 import { DesktopDragRegion } from '@/components/layout/TitleBar/TitleBar';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary/ErrorBoundary';
 import styles from './App.module.scss';
@@ -65,6 +68,7 @@ function AppContent() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const hasToken = !!authService.getToken();
   const isSessionAuthenticated = isAuthenticated && hasToken;
+  const queryClient = useQueryClient();
   const {
     data: user,
     isLoading,
@@ -83,6 +87,11 @@ function AppContent() {
       useAuthStore.getState().setAuthenticated(false);
     }
   }, [user, hasToken, isAuthenticated]);
+
+  useMountEffect(() => {
+    const chatId = matchPath('/chat/:chatId', window.location.pathname)?.params.chatId;
+    if (isSessionAuthenticated && chatId) prefetchChatOpen(queryClient, chatId);
+  });
 
   useLocalStreamRestoration({ enabled: isSessionAuthenticated });
   useChatEvents({ enabled: isSessionAuthenticated });
@@ -207,6 +216,7 @@ function AppContent() {
             </AuthRoute>
           }
         />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
   );
@@ -303,9 +313,10 @@ export default function App() {
   useMountEffect(() => {
     if (import.meta.env.DEV || !isDesktopApp()) return;
 
-    checkDesktopUpdate().catch((error) => {
-      console.error('Desktop updater check failed:', error);
-    });
+    const unlisten = attachDesktopUpdate();
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
   });
 
   useDesktopZoom();
@@ -370,7 +381,8 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Toaster {...toasterConfig} />
+      {/* #root isolates its stacking context; modals portal to body, so toasts must too. */}
+      {createPortal(<Toaster {...toasterConfig} />, document.body)}
       <ErrorBoundary>
         <AppContent />
       </ErrorBoundary>

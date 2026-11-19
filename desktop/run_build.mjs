@@ -30,14 +30,13 @@ const PYTHON_VERSION = '3.12.12';
 const NODE_VERSION = '22.12.0';
 const RELEASE_TAG = '20260211';
 const RIPGREP_VERSION = '14.1.1';
-const CLAUDE_AGENT_ACP_VERSION = '0.107.3';
-const CLAUDE_CODE_VERSION = '2.1.326';
+const CLAUDE_AGENT_ACP_VERSION = '0.108.0';
+const CLAUDE_CODE_VERSION = '2.1.327';
 const CODEX_ACP_VERSION = '2.7.0';
 const GET_PIP_URL = 'https://bootstrap.pypa.io/get-pip.py';
 
 const platform = process.platform;
 const arch = process.arch;
-const forceClean = process.argv.includes('--clean');
 
 if (platform !== 'darwin' || !['arm64', 'x64'].includes(arch)) {
   throw new Error(`Desktop build supports macOS arm64/x64 only (received: ${arch}/${platform})`);
@@ -53,6 +52,9 @@ const sidecarBinDir = join(sidecarDir, 'bin');
 const rgBin = join(sidecarDir, 'bin', 'rg');
 const claudeAcpBin = join(sidecarBinDir, 'claude-agent-acp');
 const codexAcpBin = join(sidecarBinDir, 'codex-acp');
+const nodeModulesDir = join(sidecarDir, 'node_modules');
+const claudeCliBin = join(nodeModulesDir, '.bin', 'claude');
+const claudeCodeNativeBin = join(nodeModulesDir, '@anthropic-ai', `claude-code-${platform}-${arch}`, 'claude');
 
 const PYTHON_STAMP = `${PYTHON_VERSION}+${RELEASE_TAG}-${arch}-${platform}`;
 const NODE_STAMP = `${NODE_VERSION}-${arch}-${platform}`;
@@ -208,6 +210,8 @@ function installPyDeps() {
 
 function installAcpAdapters() {
   console.log('Installing ACP adapters...');
+  rmSync(stampPath('acp'), { force: true });
+  rmSync(nodeModulesDir, { recursive: true, force: true });
   execFileSync(
     npmBin,
     [
@@ -220,6 +224,14 @@ function installAcpAdapters() {
     { stdio: 'inherit' },
   );
   writeStamp('acp', ACP_STAMP);
+}
+
+// Tauri bundles npm's symlink and hardlink as full copies of the ~330 MB binary, so keep one real file
+// at .bin/claude: the CLI derives its install type from its own path, which must not change.
+function slimClaudeBinaries() {
+  if (existsSync(claudeCodeNativeBin)) renameSync(claudeCodeNativeBin, claudeCliBin);
+  rmSync(join(nodeModulesDir, '@anthropic-ai', 'claude-code', 'bin', 'claude.exe'), { force: true });
+  rmSync(join(nodeModulesDir, '@anthropic-ai', `claude-agent-sdk-${platform}-${arch}`), { recursive: true, force: true });
 }
 
 function writeAcpLauncher(name, packageEntry) {
@@ -349,9 +361,6 @@ function signSidecar() {
 }
 
 function run() {
-  if (forceClean && existsSync(sidecarDir)) {
-    rmSync(sidecarDir, { recursive: true, force: true });
-  }
   mkdirSync(sidecarDir, { recursive: true });
 
   const pythonChanged = !upToDate('python', PYTHON_STAMP, pythonBin);
@@ -368,6 +377,7 @@ function run() {
   } else {
     installAcpAdapters();
   }
+  slimClaudeBinaries();
 
   writeAcpLaunchers();
 
