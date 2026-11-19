@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse
 from fastapi.security.utils import get_authorization_scheme_param
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.errors import ServerErrorMiddleware
+from starlette.middleware.gzip import GZipMiddleware, GZipResponder
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -17,6 +19,10 @@ from app.services.exceptions import ServiceException
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+GZIP_MINIMUM_SIZE = 1000
+GZIP_COMPRESS_LEVEL = 6
+COMPRESSIBLE_CONTENT_TYPES = ("application/json", "text/")
 
 
 class _RequestIdSend:
@@ -96,6 +102,39 @@ class SecurityHeadersMiddleware:
             await self.app(scope, receive, send)
             return
         await self.app(scope, receive, _SecurityHeadersSend(send))
+
+
+class _TextGZipResponder(GZipResponder):
+    passthrough = False
+
+    async def send_with_compression(self, message: Message) -> None:
+        # Stock GZipResponder holds response.start until the first body chunk,
+        # which delays SSE headers until the first event; decide up front instead.
+        if message["type"] == "http.response.start":
+            headers = Headers(raw=message["headers"])
+            content_type = headers.get("content-type", "")
+            self.passthrough = (
+                "content-range" in headers
+                or content_type.startswith("text/event-stream")
+                or not content_type.startswith(COMPRESSIBLE_CONTENT_TYPES)
+            )
+        if self.passthrough:
+            await self.send(message)
+        else:
+            await super().send_with_compression(message)
+
+
+class TextGZipMiddleware(GZipMiddleware):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or "gzip" not in Headers(scope=scope).get(
+            "Accept-Encoding", ""
+        ):
+            await self.app(scope, receive, send)
+            return
+        responder = _TextGZipResponder(
+            self.app, self.minimum_size, compresslevel=self.compresslevel
+        )
+        await responder(scope, receive, send)
 
 
 class McpAuthMiddleware:
@@ -197,9 +236,19 @@ async def _global_exception_handler(request: Request, exc: Exception) -> JSONRes
 
 
 def setup_middleware(app: FastAPI) -> None:
+    app.add_middleware(
+        TextGZipMiddleware,
+        minimum_size=GZIP_MINIMUM_SIZE,
+        compresslevel=GZIP_COMPRESS_LEVEL,
+    )
 
     session_secret = settings.SESSION_SECRET_KEY or settings.SECRET_KEY
     app.add_middleware(SessionMiddleware, secret_key=session_secret)
+
+    # Starlette runs an Exception handler outside all user middleware, so its
+    # 500 would skip CORS, request-id and security headers; run it inside those
+    # but outside gzip and the session, which the 500 bypassed before.
+    app.add_middleware(ServerErrorMiddleware, handler=_global_exception_handler)
 
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestIdMiddleware)
@@ -222,4 +271,3 @@ def setup_middleware(app: FastAPI) -> None:
 
     app.add_exception_handler(ServiceException, _service_exception_handler)
     app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
-    app.add_exception_handler(Exception, _global_exception_handler)

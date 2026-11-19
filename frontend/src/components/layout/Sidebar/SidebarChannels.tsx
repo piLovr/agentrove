@@ -12,7 +12,7 @@ import {
   usePinChannelMutation,
   useRenameChannelMutation,
 } from '@/hooks/queries/useChannelQueries';
-import { useBackgroundNotify } from '@/hooks/useBackgroundNotify';
+import { permissionNotifyEvent, useBackgroundNotify } from '@/hooks/useBackgroundNotify';
 import { useMountEffect } from '@/hooks/useMountEffect';
 import { getMachineClient } from '@/lib/api';
 import { streamService } from '@/services/streamService';
@@ -32,11 +32,11 @@ import { calculateDropdownPosition, mutateWithToast } from './sidebarHelpers';
 import { SidebarChannelItem } from './SidebarChannelItem';
 import type { MachineBadge } from './SidebarChatItem';
 import { SidebarMenu, SidebarMenuItem } from './SidebarMenu';
-import { SidebarLoadError } from './SidebarLoadError';
+import { LoadErrorState } from '@/components/ui/shared/LoadErrorState/LoadErrorState';
 import { SidebarSectionHeader } from './SidebarSectionHeader';
 import styles from './SidebarChannels.module.scss';
 
-const CHANNELS_PAGE_SIZE = 5;
+const COLLAPSED_CHANNEL_COUNT = 5;
 
 interface SidebarChannelsProps {
   workspaces: Workspace[];
@@ -96,11 +96,13 @@ export function SidebarChannels({
   const renameChannel = useRenameChannelMutation();
   const pinChannel = usePinChannelMutation();
   const isCollapsed = useUIStore((state) => state.collapsedSidebarSections.includes('channels'));
-  const [channelLimit, setChannelLimit] = useState(CHANNELS_PAGE_SIZE);
-  const visibleChannels = channels.filter(
+  const [isExpanded, setIsExpanded] = useState(false);
+  const collapsedChannels = channels.filter(
     ({ channel }, index) =>
-      channel.id === selectedChannelId || (!isCollapsed && index < channelLimit),
+      channel.id === selectedChannelId || (!isCollapsed && index < COLLAPSED_CHANNEL_COUNT),
   );
+  const hiddenCount = isCollapsed ? 0 : channels.length - collapsedChannels.length;
+  const visibleChannels = isExpanded && !isCollapsed ? channels : collapsedChannels;
   const connections = useMachineStore((state) => state.connections);
   const notifyBackground = useBackgroundNotify();
   const liveMachineIdsKey = [...new Set(machineChannels.map(({ machineId }) => machineId))]
@@ -116,14 +118,21 @@ export function SidebarChannels({
   useEffect(
     () =>
       streamService.onChannelNotice((notice) =>
-        notifyBackground(`/channels/${notice.channelId}`, (options) =>
+        notifyBackground(
+          `/channels/${notice.channelId}`,
           notice.kind === 'channel_permission_request'
-            ? notifyPermissionRequest(notice.payload.request, options)
-            : notifyStreamComplete({
-                ...options,
-                title: notice.payload.title,
-                message: notice.payload.body,
-              }),
+            ? permissionNotifyEvent(notice.payload.request.tool_name)
+            : notice.kind === 'channel_asked'
+              ? 'notify_questions'
+              : 'notify_completions',
+          (options) =>
+            notice.kind === 'channel_permission_request'
+              ? notifyPermissionRequest(notice.payload.request, options)
+              : notifyStreamComplete({
+                  ...options,
+                  title: notice.payload.title,
+                  message: notice.payload.body,
+                }),
         ),
       ),
     [notifyBackground],
@@ -238,18 +247,19 @@ export function SidebarChannels({
           onDropdownClick={handleDropdownClick}
         />
       ))}
-      {!isCollapsed && visibleChannels.length < channels.length && (
+      {hiddenCount > 0 && (
         <Button
           variant="unstyled"
           type="button"
-          onClick={() => setChannelLimit((limit) => limit + CHANNELS_PAGE_SIZE)}
-          className={styles['load-more']}
+          onClick={() => setIsExpanded((expanded) => !expanded)}
+          aria-expanded={isExpanded}
+          className={styles['more-toggle']}
         >
-          Load more
+          {isExpanded ? 'Show less' : `Show ${hiddenCount} more`}
         </Button>
       )}
       {!isCollapsed && machineChannels.length === 0 && load.loadFailed ? (
-        <SidebarLoadError message="Couldn't load channels" load={load} />
+        <LoadErrorState variant="inline" message="Couldn't load channels" load={load} />
       ) : (
         !isCollapsed &&
         !isLoadingChannels &&
@@ -299,6 +309,7 @@ export function SidebarChannels({
       )}
 
       <ConfirmDialog
+        destructive
         isOpen={!!channelToDelete}
         onClose={() => setChannelToDelete(null)}
         onConfirm={confirmDelete}

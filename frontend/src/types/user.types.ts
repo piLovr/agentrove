@@ -44,6 +44,10 @@ export interface StreamAction {
   thinking_mode: string;
 }
 
+export interface StreamActionForm extends StreamAction {
+  machineId: string;
+}
+
 export type SandboxProviderType = 'docker' | 'host';
 
 export interface UserSettings {
@@ -55,12 +59,24 @@ export interface UserSettings {
   personas: Persona[] | null;
   stream_actions: StreamAction[] | null;
   notifications_enabled: boolean;
+  notify_permission_requests: boolean;
+  notify_questions: boolean;
+  notify_completions: boolean;
+  notify_inbox_messages: boolean;
+  notify_sub_threads: boolean;
   auto_steer_queued_messages: boolean;
   title_model_id: string;
   created_at: string;
   updated_at: string;
   settings_version?: number;
 }
+
+export type NotifyEventSetting =
+  | 'notify_permission_requests'
+  | 'notify_questions'
+  | 'notify_completions';
+
+export type NotifySetting = NotifyEventSetting | 'notify_inbox_messages' | 'notify_sub_threads';
 
 export type UserSettingsUpdate = Partial<
   Omit<UserSettings, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'settings_version'>

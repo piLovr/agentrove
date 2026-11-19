@@ -8,7 +8,7 @@ import type { ListLoadState } from '@/hooks/queries/listLoad';
 import { useUIStore } from '@/store/uiStore';
 import { SidebarChatRow, type ChatRowProps } from './SidebarChatRow';
 import { SidebarFilterMenu } from './SidebarFilterMenu';
-import { SidebarLoadError } from './SidebarLoadError';
+import { LoadErrorState } from '@/components/ui/shared/LoadErrorState/LoadErrorState';
 import { SidebarSectionHeader } from './SidebarSectionHeader';
 import type { SidebarChatSection } from './sidebarGrouping';
 import styles from './SidebarChatList.module.scss';
@@ -34,6 +34,8 @@ interface SidebarChatListProps {
   hasMore: boolean;
   isFetchingMore: boolean;
   onLoadMore: () => void;
+  canShowLess: boolean;
+  onShowLess: () => void;
 }
 
 export function SidebarChatList({
@@ -57,6 +59,8 @@ export function SidebarChatList({
   hasMore,
   isFetchingMore,
   onLoadMore,
+  canShowLess,
+  onShowLess,
 }: SidebarChatListProps) {
   const collapsedSections = useUIStore((state) => state.collapsedSidebarSections);
   const isPinnedCollapsed = collapsedSections.includes('pinned');
@@ -74,7 +78,7 @@ export function SidebarChatList({
         threadsLoad.loadFailed ? (
           <div>
             <SidebarSectionHeader title="Threads" />
-            <SidebarLoadError message="Couldn't load threads" load={threadsLoad} />
+            <LoadErrorState variant="inline" message="Couldn't load threads" load={threadsLoad} />
           </div>
         ) : isLoadingChats ? null : (
           <div>
@@ -97,7 +101,11 @@ export function SidebarChatList({
           {pinnedChats.length === 0 && pinnedLoad.loadFailed && (
             <div className={styles.section}>
               <SidebarSectionHeader title="Pinned" />
-              <SidebarLoadError message="Couldn't load pinned threads" load={pinnedLoad} />
+              <LoadErrorState
+                variant="inline"
+                message="Couldn't load pinned threads"
+                load={pinnedLoad}
+              />
             </div>
           )}
 
@@ -127,7 +135,7 @@ export function SidebarChatList({
                   <SidebarChatRow key={chat.id} chat={chat} rowProps={recentRowProps} />
                 ))
             ) : recentChats.length === 0 && recentsLoad.loadFailed ? (
-              <SidebarLoadError message="Couldn't load threads" load={recentsLoad} />
+              <LoadErrorState variant="inline" message="Couldn't load threads" load={recentsLoad} />
             ) : recentChats.length > 0 ? (
               <div>
                 {recentChatSections.map((section) => (
@@ -140,7 +148,7 @@ export function SidebarChatList({
                 ))}
               </div>
             ) : !hasVisibleContent ? (
-              // Filters only narrow loaded pages — Load more may still surface matches.
+              // Filters only narrow loaded pages — Show more may still surface matches.
               <div className={styles['no-match']}>
                 <p className={styles['no-match-text']}>No chats match the current filters</p>
                 <Button
@@ -153,24 +161,38 @@ export function SidebarChatList({
               </div>
             ) : null}
           </div>
-          {/* Outside Recents: a remote page of only pinned chats still needs Load more. */}
-          {hasMore && (
-            <Button
-              variant="unstyled"
-              type="button"
-              onClick={onLoadMore}
-              disabled={isFetchingMore}
-              className={styles['load-more']}
-            >
-              {isFetchingMore ? (
-                <>
-                  <Spinner size="xs" />
-                  Loading…
-                </>
-              ) : (
-                'Load more'
+          {/* Outside Recents: a remote page of only pinned chats still needs Show more. */}
+          {(hasMore || canShowLess) && (
+            <div className={styles['more-toggles']}>
+              {hasMore && (
+                <Button
+                  variant="unstyled"
+                  type="button"
+                  onClick={onLoadMore}
+                  disabled={isFetchingMore}
+                  className={styles['more-toggle']}
+                >
+                  {isFetchingMore ? (
+                    <>
+                      <Spinner size="xs" />
+                      Loading…
+                    </>
+                  ) : (
+                    'Show more'
+                  )}
+                </Button>
               )}
-            </Button>
+              {canShowLess && (
+                <Button
+                  variant="unstyled"
+                  type="button"
+                  onClick={onShowLess}
+                  className={styles['more-toggle']}
+                >
+                  Show less
+                </Button>
+              )}
+            </div>
           )}
         </div>
       )}
