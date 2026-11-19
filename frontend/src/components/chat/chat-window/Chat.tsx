@@ -197,6 +197,18 @@ export const Chat = memo(function Chat() {
   const lastBotHasContent =
     !!lastBotMessage &&
     ((lastBotMessage.content_render?.events?.length ?? 0) > 0 || !!lastBotMessage.content_text);
+  // A not-yet-populated bot row renders only its padding, pushing the thinking
+  // indicator below it down a few pixels — hide it until content lands. Gate on the
+  // turn being active, not streamingMessageIdSet: the row can land in the message
+  // list before the stream store registers its message id.
+  const lastBotRowHidden = !lastBotHasContent && (isLoading || isStreaming);
+  // The latest row that actually renders keeps its actions visible.
+  const lastMessage = messages[messages.length - 1];
+  const latestMessageId = (
+    lastBotRowHidden && lastMessage?.id === lastBotMessageId
+      ? messages[messages.length - 2]
+      : lastMessage
+  )?.id;
   const showPermissionAtEnd = canShowPermissionInline && (!lastBotMessageId || lastBotIsStreaming);
   // Permission and elicitation share the slot; a pending permission wins.
   const canShowElicitationInline = !!pendingElicitationRequest && !pendingPermissionRequest;
@@ -211,15 +223,11 @@ export const Chat = memo(function Chat() {
     !isLoading;
 
   const renderMessage = useCallback(
-    (msg: (typeof messages)[number]) => {
+    (msg: (typeof messages)[number], hasReply: boolean) => {
       const messageIsStreaming = streamingMessageIdSet.has(msg.id);
       const isBotMessage = isAssistantMessage(msg);
       const isLastBotMessage = isBotMessage && msg.id === lastBotMessageId;
-      // A not-yet-populated bot row renders only its padding, pushing the thinking
-      // indicator below it down a few pixels — hide it until content lands. Gate on the
-      // turn being active, not streamingMessageIdSet: the row can land in the message
-      // list before the stream store registers its message id.
-      if (isLastBotMessage && !lastBotHasContent && (isLoading || isStreaming)) {
+      if (isLastBotMessage && lastBotRowHidden) {
         return null;
       }
       const attachments = msg.attachments ?? [];
@@ -256,6 +264,7 @@ export const Chat = memo(function Chat() {
               isLastBotMessage={
                 isLastBotMessage && !messageIsStreaming && !isLoading && !isStreaming
               }
+              isLatest={msg.id === latestMessageId}
             />
           ) : (
             <UserMessage
@@ -265,6 +274,8 @@ export const Chat = memo(function Chat() {
               attachments={attachments}
               uploadingAttachmentIds={uploadingAttachmentIds}
               isStreaming={messageIsStreaming}
+              isLatest={msg.id === latestMessageId}
+              hasReply={hasReply}
             />
           )}
           {isLastBotMessage && !messageIsStreaming && (
@@ -279,8 +290,9 @@ export const Chat = memo(function Chat() {
     [
       isLoading,
       isStreaming,
-      lastBotHasContent,
+      lastBotRowHidden,
       lastBotMessageId,
+      latestMessageId,
       latestUserMessageId,
       pendingUserMessageId,
       streamingMessageIdSet,
@@ -351,7 +363,6 @@ export const Chat = memo(function Chat() {
           dropdownPosition="top"
           showAttachedFilesPreview={true}
           contextUsage={contextUsage}
-          showTip={false}
           chatId={chatId}
           disabled={!machineOnline}
           placeholder={machineOnline ? undefined : `${machineLabel} is offline — read-only`}
@@ -377,9 +388,9 @@ export const Chat = memo(function Chat() {
                   ref={isLastTurn ? turnRef : undefined}
                   style={isLastTurn && turnMinHeight > 0 ? { minHeight: turnMinHeight } : undefined}
                 >
-                  {turn.map((msg) => (
+                  {turn.map((msg, index) => (
                     <div key={msg.id} data-message-id={msg.id}>
-                      {renderMessage(msg)}
+                      {renderMessage(msg, index === 0 && turn.length > 1)}
                     </div>
                   ))}
                   {isLastTurn && listFooter}

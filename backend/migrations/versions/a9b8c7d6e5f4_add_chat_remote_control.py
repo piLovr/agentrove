@@ -1,7 +1,7 @@
 """add chats.remote_control (Hub fork)
 
 Revision ID: a9b8c7d6e5f4
-Revises: f5a6b7c8d9e0
+Revises: a7b8c9d0e1f2
 """
 
 from typing import Sequence
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = "a9b8c7d6e5f4"
-down_revision: str | None = "f5a6b7c8d9e0"
+down_revision: str | None = "a7b8c9d0e1f2"
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
 

@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Input } from './Input';
 import { ChatProvider } from '@/contexts/ChatContext';
@@ -26,7 +27,7 @@ vi.mock('@/services/chatService', () => ({
   chatService: { getChat: () => new Promise(() => {}) },
 }));
 
-vi.mock('./InputControls', () => ({ InputControls: () => null }));
+vi.mock('./InputControls', () => ({ ComposerFooter: () => null, ModelControls: () => null }));
 
 function Composer({
   isStreaming,
@@ -39,21 +40,23 @@ function Composer({
 }) {
   const [message, setMessage] = useState('');
   return (
-    <QueryClientProvider client={queryClient}>
-      <ChatProvider chatId="chat-1">
-        <Input
-          message={message}
-          setMessage={setMessage}
-          onSubmit={onSubmit}
-          isLoading={false}
-          isStreaming={isStreaming}
-          selectedModelId={selectedModelId}
-          onModelChange={vi.fn()}
-          chatId="chat-1"
-        />
-      </ChatProvider>
-      <Toaster />
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <ChatProvider chatId="chat-1">
+          <Input
+            message={message}
+            setMessage={setMessage}
+            onSubmit={onSubmit}
+            isLoading={false}
+            isStreaming={isStreaming}
+            selectedModelId={selectedModelId}
+            onModelChange={vi.fn()}
+            chatId="chat-1"
+          />
+        </ChatProvider>
+        <Toaster />
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 
@@ -71,6 +74,13 @@ function renderComposer(props: { isStreaming: boolean; selectedModelId?: string 
 describe('Input send/queue path', () => {
   beforeEach(() => {
     vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
     useAuthStore.setState({ isAuthenticated: false });
     useMessageQueueStore.setState({ queues: new Map() });
   });
